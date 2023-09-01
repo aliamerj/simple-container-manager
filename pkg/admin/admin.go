@@ -14,14 +14,14 @@ func AdminInterface() {
 	fmt.Println("Welcome to Simple container management ")
 	for {
 		fmt.Println("_______________________________________________")
-		fmt.Println("---- Admin Interface ----")
+		fmt.Println("Container Management System - Admin Interface ")
+		fmt.Println("Commands:")
 		fmt.Println("1. List Containers")
-		fmt.Println("2. Create new Container")
-		fmt.Println("3. Stop Container")
-		fmt.Println("4. Continue a paused Container")
-		fmt.Println("5. Remove Container ")
-		fmt.Println("6. Remove All container")
-		fmt.Println("7. Exit")
+		fmt.Println("2. Stop Container")
+		fmt.Println("3. Continue a paused Container")
+		fmt.Println("4. Remove Container ")
+		fmt.Println("5. Remove All container")
+		fmt.Println("6. Exit")
 		fmt.Println("_______________________________________________")
 		fmt.Print("Enter your choice: ")
 		reader := bufio.NewReader(os.Stdin)
@@ -35,16 +35,6 @@ func AdminInterface() {
 			core.ListContainers()
 
 		case "2":
-			fmt.Println("Create a new container...")
-			// Call function to start new container
-			containerId, err := core.CreateNewContainer()
-			if err != nil {
-				fmt.Println("Creating new Container failed , please try again")
-				continue
-			}
-			fmt.Printf("Container Created Successfully \n ID : %s \n", containerId)
-
-		case "3":
 			exitStopInterface := false
 			for !exitStopInterface {
 				// Get container ID from user
@@ -71,7 +61,7 @@ func AdminInterface() {
 				core.StopContainer(id)
 			}
 
-		case "4":
+		case "3":
 			exitContinueInterface := false
 			for !exitContinueInterface {
 				// Get container ID from user
@@ -97,7 +87,7 @@ func AdminInterface() {
 				// Call function to stop container
 				core.ContinueContainer(id)
 			}
-		case "5":
+		case "4":
 			exitStopInterface := false
 			for !exitStopInterface {
 				// Get container ID from user
@@ -123,10 +113,10 @@ func AdminInterface() {
 				core.RemoveContainer(id)
 			}
 
-		case "6":
+		case "5":
 			core.RemoveAllContainers()
 
-		case "7":
+		case "6":
 			fmt.Println("Exiting admin interface.")
 			return
 

@@ -2,170 +2,121 @@ package core
 
 import (
 	"fmt"
+	"strconv"
 
-	"os/exec"
-	"sync"
 	"syscall"
+
+	"containerManger.com/pkg/container"
 )
-
-type ContainerInfo struct {
-	ID     string
-	Status string
-	PID    int
-}
-
-var mu sync.Mutex
-var containers = make(map[int]*ContainerInfo)
 
 // ...  utility functions that only admin can execute
 
-func ListContainers() {
-	fmt.Printf("number of container is : %d \n<><><><><><><><><><><><><><><><><><><><><><><>\n", len(containers))
-	mu.Lock()
-	defer mu.Unlock()
-	for id, container := range containers {
-		fmt.Printf("ID: %v, Status: %s, PID: %d\n", id, container.Status, container.PID)
-	}
-
+type User struct {
+	ID    string
+	State string
 }
 
-func CreateNewContainer() (string, error) {
-	mu.Lock()
-	newID := len(containers) + 1
-	mu.Unlock()
-
-	// Initialize a command to start a new container
-	cmd := exec.Command("tail", "-f", "/dev/null")
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
+func getContainers() map[int]*container.ContainerInfo {
+	err, containers := container.LoadContainersFromFile()
+	if err != nil {
+		fmt.Println("Failed to load containers fro json")
+		return nil
 	}
-
-	// Redirect the output somewhere instead of the terminal
-	cmd.Stdin = nil
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-
-	// Start the container and run it in the background
-	if err := cmd.Start(); err != nil {
-		return "", fmt.Errorf("Failed to start container: %v", err)
-	}
-
-	// Create a new ContainerInfo instance
-	newContainer := &ContainerInfo{
-		ID:     fmt.Sprintf("%d", newID),
-		Status: "Running",
-		PID:    cmd.Process.Pid,
-	}
-
-	// Add the new container to the containers map
-	addContainer(newID, newContainer)
-
-	// Wait for the process to finish in a separate goroutine
-	go func() {
-		err := cmd.Wait()
-
-		// Locking mutex to safely update shared data
-		mu.Lock()
-		defer mu.Unlock()
-
-		if err != nil {
-			if err.Error() == "signal: killed" {
-				return
-			}
-			fmt.Printf("An error occurred while waiting for container %d to finish: %v\n", newID, err)
-			if c, exists := containers[newID]; exists {
-				c.Status = "Error"
-			}
-		} else {
-			if c, exists := containers[newID]; exists {
-				c.Status = "Stopped"
-			}
+	return containers
+}
+func ListContainers() {
+	containers := getContainers()
+	fmt.Println("\n<><><><><><><><><><><><><><><><><><><><><><><>")
+	for id, con := range containers {
+		if con.Status == "Removed" {
+			id, _ := strconv.Atoi(con.ID)
+			delete(containers, id)
+			container.WriteContainersToFile()
+			continue
 		}
-	}()
+		fmt.Printf("ID: %v, Status: %s, Parent-PID: %d, Child-PID: %d\n", id, con.Status, con.ParentPID, con.ChildPID)
+	}
 
-	return newContainer.ID, nil
 }
 
 func RemoveContainer(ID int) {
-	mu.Lock()
-	defer mu.Unlock()
-
-	container, exists := containers[ID]
+	containers := getContainers()
+	con, exists := containers[ID]
 	if !exists {
 		fmt.Println("Container with ID", ID, "does not exist.")
 		return
 	}
-	err := syscall.Kill(container.PID, syscall.SIGKILL)
+	err := syscall.Kill(con.ChildPID, syscall.SIGKILL)
 	if err != nil {
 		fmt.Printf("Failed to kill process with ID %d: %s\n", ID, err)
 		return
 	}
-	delete(containers, ID)
+	container.DeleteContainer(ID, containers)
 	fmt.Println("Container with ID", ID, "has been removed.")
 
 }
 func StopContainer(ID int) {
-	mu.Lock()
-	defer mu.Unlock()
-	container, exists := containers[ID]
+	containers := getContainers()
+	con, exists := containers[ID]
 	if !exists {
 		fmt.Println("Container with ID", ID, "does not exist.")
 		return
 	}
-	if container.Status == "Stopped" {
+	if con.Status == "Stopped" {
 		fmt.Println("The Container with ID", ID, "is already stopped...")
 		return
 
 	}
-	err := syscall.Kill(container.PID, syscall.SIGSTOP)
-	container.Status = "Stopped"
+	if er := syscall.Kill(con.ParentPID, syscall.SIGUSR1); er != nil {
+		fmt.Printf("Failed to stop process with ID %d: %s\n", ID, er)
+	}
+	err := syscall.Kill(con.ChildPID, syscall.SIGSTOP)
+	con.Status = "Stopped"
 	if err != nil {
 		fmt.Printf("Failed to kill process with ID %d: %s\n", ID, err)
 		return
 	}
 
 	fmt.Println("Container with ID", ID, "has been stopped.")
+	container.WriteContainersToFile()
 
 }
 func ContinueContainer(ID int) {
-	mu.Lock()
-	defer mu.Unlock()
-	container, exists := containers[ID]
+	containers := getContainers()
+	con, exists := containers[ID]
 	if !exists {
 		fmt.Println("Container with ID", ID, "does not exist.")
 		return
 	}
-	if container.Status == "Running" {
+	if con.Status == "Running" {
 		fmt.Println("The Container with ID", ID, "is already running...")
 		return
 
 	}
-	err := syscall.Kill(container.PID, syscall.SIGCONT)
-	container.Status = "Running"
+	if er := syscall.Kill(con.ParentPID, syscall.SIGUSR2); er != nil {
+		fmt.Printf("Failed to stop process with ID %d: %s\n", ID, er)
+	}
+	err := syscall.Kill(con.ChildPID, syscall.SIGCONT)
+	con.Status = "Running"
 	if err != nil {
 		fmt.Printf("Failed to kill process with ID %d: %s\n", ID, err)
 		return
 	}
 	fmt.Println("Now Container with ID", ID, "is Running...")
+	container.WriteContainersToFile()
 }
 
 func RemoveAllContainers() {
-	mu.Lock()
-	defer mu.Unlock()
-	for id, container := range containers {
-		err := syscall.Kill(container.PID, syscall.SIGKILL)
+	containers := getContainers()
+	for id, con := range containers {
+		err := syscall.Kill(con.ChildPID, syscall.SIGKILL)
 		if err != nil {
 			fmt.Printf("Failed to kill process with ID %d: %s\n", id, err)
 
 		}
-		delete(containers, id)
+		container.DeleteContainer(id, containers)
+
 	}
 	fmt.Println("All Container have been Removed.")
 
-}
-
-func addContainer(id int, container *ContainerInfo) {
-	mu.Lock()
-	defer mu.Unlock()
-	containers[id] = container
 }

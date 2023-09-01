@@ -12,14 +12,13 @@ import (
 func Run() {
 	// Define flags here
 	startCmd := flag.NewFlagSet("start", flag.ExitOnError)
-	stopCmd := flag.NewFlagSet("stop", flag.ExitOnError)
 	adminCmd := flag.NewFlagSet("admin", flag.ExitOnError)
 	adminPassword := adminCmd.String("p", "", "Admin password")
 
 	// Parse and handle commands
 	//* first element is the main file, the second is the command
 	if len(os.Args) < 2 {
-		fmt.Println("expected 'start', 'stop','admin' subcommands")
+		fmt.Println("expected 'start','admin' subcommands")
 		os.Exit(1)
 
 	}
@@ -36,10 +35,9 @@ func Run() {
 
 	case "start":
 		startCmd.Parse(os.Args[2:])
+
 		container.StartContainer()
-	case "stop":
-		stopCmd.Parse(os.Args[2:])
-		container.StartContainer()
+
 	default:
 		fmt.Println("Unknown command, expected 'start' or 'stop' ")
 		os.Exit(1)
