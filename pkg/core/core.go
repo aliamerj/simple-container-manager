@@ -30,10 +30,12 @@ func ListContainers() {
 }
 
 func CreateNewContainer() (string, error) {
+	mu.Lock()
 	newID := len(containers) + 1
+	mu.Unlock()
 
 	// Initialize a command to start a new container
-	cmd := exec.Command("/bin/sh")
+	cmd := exec.Command("tail", "-f", "/dev/null")
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Cloneflags: syscall.CLONE_NEWUTS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNS,
 	}
@@ -58,6 +60,29 @@ func CreateNewContainer() (string, error) {
 	// Add the new container to the containers map
 	addContainer(newID, newContainer)
 
+	// Wait for the process to finish in a separate goroutine
+	go func() {
+		err := cmd.Wait()
+
+		// Locking mutex to safely update shared data
+		mu.Lock()
+		defer mu.Unlock()
+
+		if err != nil {
+			if err.Error() == "signal: killed" {
+				return
+			}
+			fmt.Printf("An error occurred while waiting for container %d to finish: %v\n", newID, err)
+			if c, exists := containers[newID]; exists {
+				c.Status = "Error"
+			}
+		} else {
+			if c, exists := containers[newID]; exists {
+				c.Status = "Stopped"
+			}
+		}
+	}()
+
 	return newContainer.ID, nil
 }
 
@@ -70,7 +95,7 @@ func RemoveContainer(ID int) {
 		fmt.Println("Container with ID", ID, "does not exist.")
 		return
 	}
-	err := syscall.Kill(container.PID, syscall.SIGTERM)
+	err := syscall.Kill(container.PID, syscall.SIGKILL)
 	if err != nil {
 		fmt.Printf("Failed to kill process with ID %d: %s\n", ID, err)
 		return
